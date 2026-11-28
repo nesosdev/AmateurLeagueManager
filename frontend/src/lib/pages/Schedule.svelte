@@ -17,8 +17,15 @@
     ["CANCELLED", "Cancelled"],
   ] as const;
 
-  const games = $derived(app.league.games.filter((g) => (filters.schedule === "ALL" || g.status === filters.schedule) && (filters.week === "ALL" || g.week === Number(filters.week))));
-  const weekOptions = $derived([{ value: "ALL", label: "All weeks" }, ...[...new Set(app.league.games.map((g) => g.week))].sort((a, b) => a - b).map((w) => ({ value: String(w), label: `Week ${w}` }))]);
+  // Linked players and team managers see the shared schedule scoped to their team.
+  // Commissioners retain the league-wide US-08 schedule.
+  const participantTeamIds = $derived(app.session.memberships.filter((m) => m.role === "PLAYER").map((m) => m.teamId));
+  const managerTeamIds = $derived(managedTeamIds());
+  const scheduleTeamIds = $derived(managerTeamIds.length ? managerTeamIds : participantTeamIds);
+  const teamScheduleView = $derived(!commissioner() && scheduleTeamIds.length > 0);
+  const scheduleGames = $derived(app.league.games.filter((g) => !teamScheduleView || scheduleTeamIds.includes(g.homeId) || scheduleTeamIds.includes(g.awayId)));
+  const games = $derived(scheduleGames.filter((g) => (filters.schedule === "ALL" || g.status === filters.schedule) && (filters.week === "ALL" || g.week === Number(filters.week))));
+  const weekOptions = $derived([{ value: "ALL", label: "All weeks" }, ...[...new Set(scheduleGames.map((g) => g.week))].sort((a, b) => a - b).map((w) => ({ value: String(w), label: `Week ${w}` }))]);
 
   const myGames = $derived(app.league.games.filter((g) => (managedTeamIds().includes(g.homeId) || managedTeamIds().includes(g.awayId)) && g.status === "SCHEDULED"));
   const pending = $derived(
@@ -36,7 +43,11 @@
   const disputedCount = $derived(app.league.scoreSubmissions.filter((s) => s.status === "DISPUTED").length);
 </script>
 
-<PageHeading eyebrow="GET READY FOR GAME DAY" title="League schedule" description="Every matchup, from the opening kickoff to the final whistle.">
+<PageHeading
+  eyebrow="GET READY FOR GAME DAY"
+  title={teamScheduleView ? "Your team schedule" : "League schedule"}
+  description={teamScheduleView ? "Every matchup for your team, from kickoff to the final whistle." : "Every matchup, from the opening kickoff to the final whistle."}
+>
   {#snippet action()}
     {#if commissioner()}<ScheduleButton />{/if}
   {/snippet}
@@ -54,7 +65,7 @@
   {/each}
 </div>
 {#if !games.length}
-  <EmptyState title="No games here yet" description="Choose another filter or schedule a new matchup." />
+  <EmptyState title="No games here yet" description={teamScheduleView ? "Your team has no matches for these filters." : "Choose another filter or schedule a new matchup."} />
 {/if}
 
 {#if managedTeamIds().length}
